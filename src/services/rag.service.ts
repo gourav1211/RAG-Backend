@@ -21,6 +21,10 @@ export class RAGService {
   private openaiService: OpenAIService;
   private promptService: PromptService;
   private isInitialized: boolean = false;
+  
+  // Static flag to prevent multiple simultaneous initializations
+  private static isGloballyInitializing: boolean = false;
+  private static globalInitializationPromise: Promise<void> | null = null;
 
   constructor() {
     this.pineconeService = new PineconeService();
@@ -34,32 +38,54 @@ export class RAGService {
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) {
-      console.log('RAG system already initialized');
+      console.log('✅ RAG system already initialized, skipping initialization');
+      return;
+    }
+
+    // If another instance is already initializing, wait for it
+    if (RAGService.isGloballyInitializing && RAGService.globalInitializationPromise) {
+      console.log('⏳ RAG system is being initialized by another instance, waiting...');
+      await RAGService.globalInitializationPromise;
+      this.isInitialized = true;
       return;
     }
 
     try {
-      console.log('Initializing RAG system...');
+      // Set the global flag and create the promise
+      RAGService.isGloballyInitializing = true;
+      RAGService.globalInitializationPromise = this.performInitialization();
       
-      // Initialize Pinecone index
-      await this.pineconeService.initializeIndex();
-      
-      // Check if we need to load documents
-      const stats = await this.pineconeService.getIndexStats();
-      
-      if (!stats.totalVectorCount || stats.totalVectorCount === 0) {
-        console.log('No documents found in index, loading documents...');
-        await this.loadDocuments();
-      } else {
-        console.log(`Found ${stats.totalVectorCount} vectors in index`);
-      }
-      
+      await RAGService.globalInitializationPromise;
       this.isInitialized = true;
-      console.log('RAG system initialized successfully');
-    } catch (error) {
-      console.error('Error initializing RAG system:', error);
-      throw error;
+      
+    } finally {
+      // Reset the global flag
+      RAGService.isGloballyInitializing = false;
+      RAGService.globalInitializationPromise = null;
     }
+  }
+
+  /**
+   * Perform the actual initialization work
+   */
+  private async performInitialization(): Promise<void> {
+    console.log('🔄 Initializing RAG system...');
+    
+    // Initialize Pinecone index
+    await this.pineconeService.initializeIndex();
+    
+    // Check if we need to load documents
+    const stats = await this.pineconeService.getIndexStats();
+    console.log(`📊 Index stats - Total vectors: ${stats.totalVectorCount || 0}`);
+    
+    if (!stats.totalVectorCount || stats.totalVectorCount === 0) {
+      console.log('📄 No documents found in index, loading documents...');
+      await this.loadDocuments();
+    } else {
+      console.log(`✅ Found ${stats.totalVectorCount} vectors in index - skipping document loading`);
+    }
+    
+    console.log('✅ RAG system initialized successfully');
   }
 
   /**
@@ -67,16 +93,16 @@ export class RAGService {
    */
   async loadDocuments(): Promise<void> {
     try {
-      console.log('Loading documents from data directory...');
+      console.log('📚 Loading documents from data directory...');
       
       const documents = await this.documentLoader.loadAllDocuments();
       
       if (documents.length === 0) {
-        console.warn('No documents found to load');
+        console.warn('⚠️ No documents found to load');
         return;
       }
       
-      console.log(`Loaded ${documents.length} documents, storing in Pinecone...`);
+      console.log(`📄 Loaded ${documents.length} documents, storing in Pinecone...`);
       
       // Convert to format expected by Pinecone service
       const documentsForPinecone = documents.map(doc => ({
@@ -87,9 +113,9 @@ export class RAGService {
       
       await this.pineconeService.storeDocuments(documentsForPinecone);
       
-      console.log('All documents stored successfully');
+      console.log('✅ All documents stored successfully');
     } catch (error) {
-      console.error('Error loading documents:', error);
+      console.error('❌ Error loading documents:', error);
       throw error;
     }
   }
@@ -100,11 +126,12 @@ export class RAGService {
   async generateResponse(query: string, topK: number = 3): Promise<RAGResponse> {
     try {
       if (!this.isInitialized) {
+        console.log('🔄 RAG system not initialized, initializing now...');
         await this.initialize();
       }
 
       // Search for relevant documents
-      console.log(`Searching for relevant context for query: "${query}"`);
+      console.log(`🔍 Searching for relevant context for query: "${query.substring(0, 50)}..."`);
       const relevantDocuments = await this.pineconeService.searchSimilar(query, topK);
       
       // Create context from retrieved documents
@@ -122,7 +149,7 @@ export class RAGService {
         sources
       };
     } catch (error) {
-      console.error('Error generating RAG response:', error);
+      console.error('❌ Error generating RAG response:', error);
       throw error;
     }
   }
@@ -195,6 +222,23 @@ export class RAGService {
     });
     
     return Array.from(sources);
+  }
+
+  /**
+   * Check if the RAG system has documents loaded
+   */
+  async hasDocumentsLoaded(): Promise<{ hasDocuments: boolean; vectorCount: number }> {
+    try {
+      const stats = await this.pineconeService.getIndexStats();
+      const vectorCount = stats.totalVectorCount || 0;
+      return {
+        hasDocuments: vectorCount > 0,
+        vectorCount
+      };
+    } catch (error) {
+      console.error('❌ Error checking document status:', error);
+      return { hasDocuments: false, vectorCount: 0 };
+    }
   }
 
   /**

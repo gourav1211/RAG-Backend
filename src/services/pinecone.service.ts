@@ -134,12 +134,13 @@ export class PineconeService {
    */
   async storeDocuments(documents: { content: string; source: string; title?: string }[]): Promise<void> {
     try {
+      console.log(`🚀 Starting to store ${documents.length} documents in Pinecone...`);
       const index = this.pinecone.index(this.indexName);
       const vectors: any[] = [];
 
       for (const doc of documents) {
         const chunks = this.chunkText(doc.content);
-        console.log(`Processing ${chunks.length} chunks for ${doc.source}`);
+        console.log(`📄 Processing ${chunks.length} chunks for ${doc.source}`);
 
         for (let i = 0; i < chunks.length; i++) {
           const chunk = chunks[i];
@@ -165,7 +166,7 @@ export class PineconeService {
           // Batch upsert every 100 vectors to avoid memory issues
           if (vectors.length >= 100) {
             await index.upsert(vectors);
-            console.log(`Upserted batch of ${vectors.length} vectors`);
+            console.log(`✅ Upserted batch of ${vectors.length} vectors`);
             vectors.length = 0; // Clear array
             
             // Small delay to avoid rate limiting
@@ -177,12 +178,12 @@ export class PineconeService {
       // Upsert remaining vectors
       if (vectors.length > 0) {
         await index.upsert(vectors);
-        console.log(`Upserted final batch of ${vectors.length} vectors`);
+        console.log(`✅ Upserted final batch of ${vectors.length} vectors`);
       }
 
-      console.log('All documents stored successfully in Pinecone');
+      console.log('🎉 All documents stored successfully in Pinecone');
     } catch (error) {
-      console.error('Error storing documents in Pinecone:', error);
+      console.error('❌ Error storing documents in Pinecone:', error);
       throw error;
     }
   }

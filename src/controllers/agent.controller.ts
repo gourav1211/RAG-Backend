@@ -100,8 +100,44 @@ export class AgentController {
       // Check if any plugins provided successful results
       const successfulPlugins = pluginResults.filter(result => result.result.success);
       
-      if (successfulPlugins.length > 0) {
-        // Use plugin results as primary response with enhanced prompt
+      // Always collect plugin names that were used (even if not successful)
+      pluginsUsed = pluginResults.map(p => p.pluginName);
+
+      // Determine response strategy based on available data
+      if (successfulPlugins.length > 0 && shouldUseRAG) {
+        // Combined approach: Use both RAG and plugins
+        console.log(`🎯 Using combined RAG + Plugin approach for: ${successfulPlugins.map(p => p.pluginName).join(', ')}`);
+        
+        // Get RAG context first
+        const ragResponse = await this.ragService.generateResponse(message, 3);
+        sources = ragResponse.sources;
+        
+        // Create comprehensive prompt with both RAG context and plugin results
+        const comprehensivePrompt = this.promptService.generateSystemPrompt({
+          memorySummary,
+          ragContext: ragResponse.context.contextualPrompt,
+          ragSources: ragResponse.sources,
+          pluginResults: successfulPlugins,
+          conversationHistory,
+          userQuery: message,
+          sessionId: session_id,  
+          timestamp: new Date().toISOString()
+        });
+
+        llmResponse = await this.openaiService.generateResponse({
+          messages: [
+            {
+              role: 'user',
+              content: comprehensivePrompt,
+              timestamp: new Date().toISOString()
+            }
+          ],
+          max_tokens: 1500, // Increased for comprehensive response
+          temperature: 0.7,
+        });
+        
+      } else if (successfulPlugins.length > 0) {
+        // Plugin-only response
         console.log(`🎯 Using plugin results from: ${successfulPlugins.map(p => p.pluginName).join(', ')}`);
         
         const pluginPrompt = this.promptService.generatePluginPrompt(successfulPlugins, message);
@@ -118,10 +154,8 @@ export class AgentController {
           temperature: 0.7,
         });
         
-        pluginsUsed = successfulPlugins.map(p => p.pluginName);
-        
       } else if (shouldUseRAG) {
-        // Use RAG for enhanced response (already uses enhanced prompts)
+        // RAG-only response
         console.log(`🔍 Using RAG for enhanced response...`);
         const ragResponse = await this.ragService.generateResponse(message, 3);
         llmResponse = {
@@ -130,7 +164,7 @@ export class AgentController {
         };
         sources = ragResponse.sources;
       } else {
-        // Use enhanced system prompt for standard response
+        // Standard enhanced response
         console.log(`💬 Using enhanced AI response...`);
         const systemPrompt = this.promptService.generateSystemPrompt({
           memorySummary,
@@ -326,6 +360,7 @@ export class AgentController {
     try {
       // Get RAG system status
       const systemStatus = await this.ragService.getSystemStatus();
+      const documentStatus = await this.ragService.hasDocumentsLoaded();
       
       if (systemStatus.initialized) {
         res.status(200).json({
@@ -340,6 +375,8 @@ export class AgentController {
           ],
           stats: {
             documentsLoaded: systemStatus.documentsLoaded,
+            vectorCount: documentStatus.vectorCount,
+            hasDocuments: documentStatus.hasDocuments,
             pineconeStatus: systemStatus.pineconeStatus.status
           }
         });
@@ -348,6 +385,10 @@ export class AgentController {
           status: 'initializing',
           message: 'RAG system is not yet initialized - run /agent/rag/refresh to initialize',
           timestamp: new Date().toISOString(),
+          stats: {
+            vectorCount: documentStatus.vectorCount,
+            hasDocuments: documentStatus.hasDocuments
+          },
           next_step: 'POST /agent/rag/refresh'
         });
       }

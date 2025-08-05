@@ -22,7 +22,7 @@ export class OpenAIService {
       apiKey: apiKey,
     });
     
-    this.model = process.env.OPENAI_MODEL || 'gpt-4';
+    this.model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
   }
 
   /**
