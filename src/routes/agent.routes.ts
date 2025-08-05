@@ -34,6 +34,10 @@ export class AgentRoutes {
     this.router.get('/plugins/health', this.agentController.pluginHealthCheck);
     this.router.get('/plugins', this.agentController.listPlugins);
     this.router.post('/plugins/test', this.agentController.testPlugin);
+
+    // Prompt engineering endpoints
+    this.router.post('/prompt/test', this.agentController.testPromptSystem);
+    this.router.post('/prompt/optimize', this.agentController.testPromptOptimization);
   }
 }
 

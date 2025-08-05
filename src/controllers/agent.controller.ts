@@ -3,6 +3,7 @@ import { OpenAIService } from '../services/openai.service';
 import { MemoryService } from '../services/memory.service';
 import { RAGService } from '../services/rag.service';
 import { PluginExecutionService } from '../services/plugin-execution.service';
+import { PromptService } from '../services/prompt.service';
 import { WeatherPlugin } from '../plugins/weather.plugin';
 import { MathPlugin } from '../plugins/math.plugin';
 import { AgentRequest, AgentResponse, Message, ApiError } from '../types';
@@ -13,12 +14,14 @@ export class AgentController {
   private memoryService: MemoryService;
   private ragService: RAGService;
   private pluginService: PluginExecutionService;
+  private promptService: PromptService;
 
   constructor() {
     this.openaiService = new OpenAIService();
     this.memoryService = new MemoryService();
     this.ragService = new RAGService();
     this.pluginService = new PluginExecutionService();
+    this.promptService = new PromptService();
     
     // Register plugins
     this.initializePlugins();
@@ -90,9 +93,6 @@ export class AgentController {
       const conversationHistory = this.memoryService.getConversationContext(session_id, 6);
       const memorySummary = this.memoryService.generateMemorySummary(session_id);
 
-      // Generate system prompt
-      const systemPrompt = this.generateSystemPrompt(memorySummary);
-
       let llmResponse;
       let sources: string[] = [];
       let pluginsUsed: string[] = [];
@@ -101,22 +101,27 @@ export class AgentController {
       const successfulPlugins = pluginResults.filter(result => result.result.success);
       
       if (successfulPlugins.length > 0) {
-        // Use plugin results as primary response
+        // Use plugin results as primary response with enhanced prompt
         console.log(`🎯 Using plugin results from: ${successfulPlugins.map(p => p.pluginName).join(', ')}`);
         
-        const pluginResponses = successfulPlugins
-          .map(plugin => plugin.result.formattedResponse || plugin.result.message || 'Plugin executed successfully')
-          .join('\n\n');
+        const pluginPrompt = this.promptService.generatePluginPrompt(successfulPlugins, message);
         
-        llmResponse = {
-          content: pluginResponses,
-          usage: undefined
-        };
+        llmResponse = await this.openaiService.generateResponse({
+          messages: [
+            {
+              role: 'user',
+              content: pluginPrompt,
+              timestamp: new Date().toISOString()
+            }
+          ],
+          max_tokens: 1000,
+          temperature: 0.7,
+        });
         
         pluginsUsed = successfulPlugins.map(p => p.pluginName);
         
       } else if (shouldUseRAG) {
-        // Use RAG for enhanced response
+        // Use RAG for enhanced response (already uses enhanced prompts)
         console.log(`🔍 Using RAG for enhanced response...`);
         const ragResponse = await this.ragService.generateResponse(message, 3);
         llmResponse = {
@@ -125,8 +130,16 @@ export class AgentController {
         };
         sources = ragResponse.sources;
       } else {
-        // Use standard OpenAI response
-        console.log(`💬 Using standard AI response...`);
+        // Use enhanced system prompt for standard response
+        console.log(`💬 Using enhanced AI response...`);
+        const systemPrompt = this.promptService.generateSystemPrompt({
+          memorySummary,
+          conversationHistory,
+          userQuery: message,
+          sessionId: session_id,
+          timestamp: new Date().toISOString()
+        });
+
         llmResponse = await this.openaiService.generateResponse({
           messages: conversationHistory,
           system_prompt: systemPrompt,
@@ -450,29 +463,190 @@ export class AgentController {
   }
 
   /**
-   * Generate system prompt for the agent
+   * Test the new prompt engineering system
+   * POST /agent/prompt/test
    */
-  private generateSystemPrompt(memorySummary: string): string {
-    return `You are an intelligent AI assistant with access to conversation history and specialized tools.
+  testPromptSystem = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { message = "What is Express.js and how do I set it up?" } = req.body;
+      const sessionId = 'prompt_test_session';
 
-## Your Role
-- Provide helpful, accurate, and engaging responses
-- Maintain context from previous conversations
-- Use tools and plugins when appropriate to enhance your responses
-- Be conversational but professional
+      // Simulate a conversation context
+      const mockMessages: Message[] = [
+        { role: 'user', content: 'Hello, I\'m learning web development', timestamp: new Date().toISOString() },
+        { role: 'assistant', content: 'Great! I\'d be happy to help you learn web development. What would you like to know?', timestamp: new Date().toISOString() }
+      ];
 
-## Memory Context
-${memorySummary}
+      const memorySummary = "2 total messages. Recent topics: learning web development, getting started with basics. Last activity: just now";
+      
+      // Test basic system prompt
+      const basicPrompt = this.promptService.generateSystemPrompt({
+        memorySummary,
+        conversationHistory: mockMessages,
+        userQuery: message,
+        sessionId,
+        timestamp: new Date().toISOString()
+      });
 
-## Instructions
-1. Consider the conversation history when formulating responses
-2. If asked about weather, you can use weather data
-3. If asked about math calculations, you can compute accurate results
-4. Always aim to be helpful and informative
-5. If you're unsure about something, say so honestly
+      // Test RAG prompt
+      const ragPrompt = this.promptService.generateRAGPrompt(
+        message,
+        "Express.js is a minimal and flexible Node.js web application framework that provides a robust set of features for web and mobile applications.",
+        ["express-guide.md", "nodejs-guide.md"]
+      );
 
-Remember to maintain the conversation flow and reference previous context when relevant.`;
-  }
+      // Test memory prompt
+      const memoryPrompt = this.promptService.generateMemoryPrompt(memorySummary, mockMessages);
+
+      // Get context stats
+      const basicStats = this.promptService.getContextStats(basicPrompt);
+      const ragStats = this.promptService.getContextStats(ragPrompt);
+
+      res.status(200).json({
+        message: 'Prompt engineering system test completed',
+        timestamp: new Date().toISOString(),
+        test_input: message,
+        prompts: {
+          basic_system_prompt: {
+            content: basicPrompt,
+            stats: basicStats
+          },
+          rag_prompt: {
+            content: ragPrompt,
+            stats: ragStats
+          },
+          memory_prompt: {
+            content: memoryPrompt.substring(0, 500) + "...", // Truncate for readability
+            stats: this.promptService.getContextStats(memoryPrompt)
+          }
+        },
+        features: [
+          '✅ Dynamic system prompt assembly',
+          '✅ Memory integration templates',
+          '✅ RAG context injection',
+          '✅ Plugin result integration',
+          '✅ Context window management',
+          '✅ Token counting and truncation'
+        ]
+      });
+    } catch (error) {
+      console.error('Prompt Test Error:', error);
+      next(error);
+    }
+  };
+
+  /**
+   * Advanced prompt optimization test
+   * POST /agent/prompt/optimize
+   */
+  testPromptOptimization = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { 
+        message = "How do I implement authentication in Express.js?",
+        scenario = "rag", // conversation, rag, plugin, memory
+        maxTokens = 3500 
+      } = req.body;
+
+      const sessionId = 'optimization_test_session';
+
+      // Create a rich conversation context
+      const conversationHistory: Message[] = [
+        { role: 'user', content: 'I want to learn backend development', timestamp: new Date().toISOString() },
+        { role: 'assistant', content: 'Great choice! Backend development is exciting. What would you like to start with?', timestamp: new Date().toISOString() },
+        { role: 'user', content: 'I heard Express.js is good for beginners', timestamp: new Date().toISOString() },
+        { role: 'assistant', content: 'Absolutely! Express.js is perfect for beginners. It provides a minimal yet powerful framework for building web applications.', timestamp: new Date().toISOString() },
+        { role: 'user', content: 'I created my first Express server! Now I need to add user authentication', timestamp: new Date().toISOString() }
+      ];
+
+      const memorySummary = this.promptService.summarizeMemoryForPrompt(conversationHistory);
+
+      // Create mock plugin results
+      const mockPluginResults = [
+        {
+          pluginName: 'search',
+          result: {
+            success: true,
+            message: 'Found authentication patterns and best practices',
+            formattedResponse: 'Authentication best practices include using JWT tokens, bcrypt for password hashing, and implementing proper session management.'
+          },
+          executionTime: 150
+        }
+      ];
+
+      const promptContext = {
+        memorySummary,
+        ragContext: "Authentication in Express.js involves implementing JWT tokens, password hashing with bcrypt, session management, and role-based access control. Security best practices include using HTTPS, validating input, and implementing rate limiting.",
+        ragSources: ["security-guide.md", "express-guide.md"],
+        pluginResults: mockPluginResults,
+        conversationHistory,
+        userQuery: message,
+        sessionId,
+        timestamp: new Date().toISOString()
+      };
+
+      // Test different optimization scenarios
+      const optimizedPrompt = this.promptService.optimizePromptForScenario(
+        promptContext, 
+        scenario as any, 
+        maxTokens
+      );
+
+      // Test context window management
+      const additionalContext = [
+        "## Security Guidelines\nAlways validate user input and use HTTPS in production.",
+        "## Code Examples\nHere are some code examples for implementing JWT authentication.",
+        "## Best Practices\nImplement rate limiting and use environment variables for secrets."
+      ];
+
+      const windowManagement = this.promptService.manageContextWindow(
+        optimizedPrompt,
+        additionalContext,
+        maxTokens
+      );
+
+      // Calculate metrics
+      const metrics = this.promptService.calculatePromptMetrics(windowManagement.prompt);
+      const stats = this.promptService.getContextStats(windowManagement.prompt);
+
+      res.status(200).json({
+        message: 'Prompt optimization test completed',
+        timestamp: new Date().toISOString(),
+        configuration: {
+          scenario,
+          maxTokens,
+          inputMessage: message
+        },
+        optimization: {
+          memorySummarization: {
+            original_messages: conversationHistory.length,
+            summarized_memory: memorySummary
+          },
+          contextWindow: {
+            finalTokens: stats.estimatedTokens,
+            truncated: windowManagement.truncated,
+            removedSections: windowManagement.removedSections,
+            tokenEfficiency: `${((stats.estimatedTokens / maxTokens) * 100).toFixed(1)}%`
+          },
+          promptMetrics: metrics
+        },
+        optimizedPrompt: {
+          content: windowManagement.prompt.substring(0, 1000) + "...", // Truncate for readability
+          stats
+        },
+        features: [
+          '✅ Memory summarization',
+          '✅ Scenario-based optimization',
+          '✅ Context window management',
+          '✅ Token counting and efficiency',
+          '✅ Intelligent truncation',
+          '✅ Performance metrics'
+        ]
+      });
+    } catch (error) {
+      console.error('Prompt Optimization Test Error:', error);
+      next(error);
+    }
+  };
 
   /**
    * Plugin system health check

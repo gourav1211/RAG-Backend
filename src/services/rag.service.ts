@@ -1,6 +1,7 @@
 import { PineconeService, SearchResult } from './pinecone.service';
 import { DocumentLoaderService } from './document-loader.service';
 import { OpenAIService } from './openai.service';
+import { PromptService } from './prompt.service';
 
 export interface RAGContext {
   relevantDocuments: SearchResult[];
@@ -18,12 +19,14 @@ export class RAGService {
   private pineconeService: PineconeService;
   private documentLoader: DocumentLoaderService;
   private openaiService: OpenAIService;
+  private promptService: PromptService;
   private isInitialized: boolean = false;
 
   constructor() {
     this.pineconeService = new PineconeService();
     this.documentLoader = new DocumentLoaderService();
     this.openaiService = new OpenAIService();
+    this.promptService = new PromptService();
   }
 
   /**
@@ -153,20 +156,8 @@ export class RAGService {
    * Build the prompt for OpenAI with context
    */
   private buildPrompt(query: string, context: string): string {
-    const basePrompt = `You are a helpful AI assistant with expertise in web development, programming, and software engineering. Use the provided context to answer the user's question accurately and comprehensively.
-
-If the context contains relevant information, use it to provide a detailed answer. If the context doesn't contain enough information to fully answer the question, acknowledge this and provide what information you can based on your general knowledge.
-
-Always cite your sources when using information from the context by mentioning the source document.
-
-Context:
-${context}
-
-User Question: ${query}
-
-Response:`;
-
-    return basePrompt;
+    // Use the new PromptService for enhanced RAG prompts
+    return this.promptService.generateRAGPrompt(query, context);
   }
 
   /**
