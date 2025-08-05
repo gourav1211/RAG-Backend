@@ -78,10 +78,9 @@ A sophisticated AI agent backend system built with TypeScript, featuring Retriev
 
 4. **Start the server**
    ```bash
-   # Development
-   npm run dev
-   
    # Production
+   npm run build
+   
    npm start
    ```
 
