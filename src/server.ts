@@ -24,12 +24,7 @@ class Server {
     this.app.use(helmet());
     
     // CORS middleware
-    this.app.use(cors({
-      origin: process.env.NODE_ENV === 'production' 
-        ? ['https://your-frontend-domain.com'] 
-        : ['http://localhost:3000', 'http://localhost:3001'],
-      credentials: true
-    }));
+    this.app.use(cors());
 
     // Body parsing middleware
     this.app.use(express.json({ limit: '10mb' }));
