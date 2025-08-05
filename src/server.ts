@@ -116,10 +116,13 @@ class Server {
   }
 }
 
-// Start the server
+// Create server instance
+const server = new Server();
+
+// Export the Express app for Vercel
+export default server.getApp();
+
+// Start the server only in development (not in Vercel)
 if (require.main === module) {
-  const server = new Server();
   server.start();
 }
-
-export default Server;
