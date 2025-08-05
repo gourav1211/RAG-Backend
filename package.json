@@ -1,7 +1,7 @@
 {
-  "name": "new-folder",
+  "name": "rag-backend-ai-agent",
   "version": "1.0.0",
-  "description": "Thank you for applying. To move forward, you are required to complete the following **1-day technical challenge**. This task is designed to assess your backend engineering depth, LLM tooling experience, vibe coding fluency, and most importantly—your ownership and ability to deliver under pressure.",
+  "description": "A production-ready RAG (Retrieval-Augmented Generation) AI Agent backend with multi-modal capabilities including document retrieval, mathematical calculations, weather data, and conversational memory management.",
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
@@ -15,11 +15,23 @@
     "test:unit": "jest --testPathPattern=unit",
     "test:integration": "jest --testPathPattern=integration",
     "lint": "eslint src/**/*.ts",
-    "format": "prettier --write src/**/*.ts"
+    "format": "prettier --write src/**/*.ts",
+    "vercel-build": "npm run build"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "ai",
+    "rag", 
+    "chatbot",
+    "openai",
+    "pinecone",
+    "typescript",
+    "express",
+    "backend",
+    "retrieval-augmented-generation",
+    "llm"
+  ],
+  "author": "Gourav",
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "@pinecone-database/pinecone": "^6.1.2",
